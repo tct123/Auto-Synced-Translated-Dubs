@@ -9,3 +9,4 @@ test.py
 
 # Miscellaneous
 .DS_Store
+client_secret.json
