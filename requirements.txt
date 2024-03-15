@@ -12,3 +12,4 @@ deepl
 regex
 soundfile>=0.12.1
 aiohttp
+regex
