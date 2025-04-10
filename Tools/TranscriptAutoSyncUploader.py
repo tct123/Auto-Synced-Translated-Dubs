@@ -18,7 +18,7 @@ else:
 sys.path.insert(1, os.getcwd())
 # ---------------------------------------------------------------------------------------
 from Scripts.shared_imports import *
-from Tools.SubtitleTrackRemover import main as remove_tracks
+from Tools.SubtitlesTitleDescriptionRemover import main as remove_tracks
 import Scripts.auth as auth
 
 from googleapiclient.errors import HttpError
@@ -240,7 +240,7 @@ elif userChoice == "uploadMultipleTranscripts":
                     sys.exit()
     
     # Get list of supported auto-sync languages for YouTube
-    supportedLanguages = config['youtube_autosync_languages'].replace(' ','').split(',')
+    supportedLanguages = config.youtube_autosync_languages
     unsupportedList = []
     for langCode in transcriptFilesDict.keys():
         if langCode not in supportedLanguages:

@@ -17,13 +17,14 @@ import traceback
 from json import JSONDecodeError
 import configparser
 import deepl
-
+from typing import Any
 
 # Google Cloud Globals
 token_file_name = 'token.pickle'
 youtube_token_filename = 'yt_token.pickle'
-GOOGLE_TTS_API = None
-GOOGLE_TRANSLATE_API = None
+GOOGLE_TTS_API:Any = None
+GOOGLE_TRANSLATE_API:Any = None
+YOUTUBE_API:Any = None
 
 # deepl Globals
 DEEPL_API = None
@@ -174,10 +175,10 @@ def first_authentication():
 
 def deepl_auth():
   # Deepl API Key
-  deepl_auth_object = deepl.Translator(cloudConfig['deepl_api_key'])
+  deepl_auth_object = deepl.Translator(cloudConfig.deepl_api_key)
   return deepl_auth_object
 
-if cloudConfig['translate_service'] == 'deepl':
+if cloudConfig.translate_service == 'deepl':
   DEEPL_API = deepl_auth()
 
 
@@ -185,5 +186,5 @@ if cloudConfig['translate_service'] == 'deepl':
 ################################## GOOGLE AUTHORIZATION #########################################
 #################################################################################################
 
-if cloudConfig['tts_service'] == "google" or (config['skip_translation'] == False and (cloudConfig['translate_service'] == "google" or cloudConfig['use_fallback_google_translate'])):
+if cloudConfig.tts_service == TTSService.GOOGLE or (config.skip_translation == False and (cloudConfig.translate_service == TTSService.GOOGLE or cloudConfig.use_fallback_google_translate)):
   GOOGLE_TTS_API, GOOGLE_TRANSLATE_API = first_authentication()

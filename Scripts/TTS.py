@@ -13,6 +13,7 @@ import re
 from urllib.request import urlopen
 import aiohttp
 import asyncio
+from typing import Optional
 
 from Scripts.shared_imports import *
 import Scripts.auth as auth
@@ -22,9 +23,9 @@ import Scripts.utils as utils
 # Get variables from config
 
 # Get Azure variables if applicable
-AZURE_SPEECH_KEY = cloudConfig['azure_speech_key']
-AZURE_SPEECH_REGION = cloudConfig['azure_speech_region']
-ELEVENLABS_API_KEY = cloudConfig['elevenlabs_api_key']
+AZURE_SPEECH_KEY = cloudConfig.azure_speech_key
+AZURE_SPEECH_REGION = cloudConfig.azure_speech_region
+ELEVENLABS_API_KEY = cloudConfig.elevenlabs_api_key
 
 # Get List of Voices Available
 def get_voices():
@@ -53,7 +54,7 @@ def add_all_pronunciation_overrides(text):
     text = add_phoneme_tags(text)
     return text
 
-def add_interpretas_tags(text):
+def add_interpretas_tags(text:str) -> str:
     # Add interpret-as tags from interpret-as.csv
     for entryDict in interpretAsEntries:
         # Get entry info
@@ -87,7 +88,7 @@ def add_interpretas_tags(text):
 
     return text
 
-def add_alias_tags(text):
+def add_alias_tags(text:str) -> str:
     for entryDict in aliasEntries:
         # Get entry info
         entryText = entryDict['Original Text']
@@ -107,7 +108,7 @@ def add_alias_tags(text):
 
 
 # Uses the phoneme pronunciation file to add phoneme tags to the text
-def add_phoneme_tags(text):
+def add_phoneme_tags(text:str) -> str:
     for entryDict in phonemeEntries:
         # Get entry info
         entryText = entryDict['Text']
@@ -131,7 +132,7 @@ def add_phoneme_tags(text):
 # =============================================================================================================================
 
 # Build API request for google text to speech, then execute
-def synthesize_text_google(text, speedFactor, voiceName, voiceGender, languageCode, audioEncoding=config['synth_audio_encoding'].upper()):
+def synthesize_text_google(text:str, speedFactor:float, voiceName:str, voiceGender:str, languageCode:str, audioEncoding:str=config.synth_audio_encoding.upper()) -> bytes:
 
     # Keep speedFactor between 0.25 and 4.0
     if speedFactor < 0.25:
@@ -170,7 +171,7 @@ def synthesize_text_google(text, speedFactor, voiceName, voiceGender, languageCo
             print("Waiting 65 seconds to try again")
             time.sleep(65)
             print("Trying again...")
-            response = send_request()
+            response = send_request(speedFactor)
         else:
             input("Press Enter to continue...")
     except Exception as ex:
@@ -182,7 +183,7 @@ def synthesize_text_google(text, speedFactor, voiceName, voiceGender, languageCo
     decoded_audio = base64.b64decode(response['audioContent'])
     return decoded_audio
 
-async def synthesize_text_elevenlabs_async_http(text, voiceID, modelID, apiKey=ELEVENLABS_API_KEY):
+async def synthesize_text_elevenlabs_async_http(text:str, voiceID:str, modelID:str, apiKey:str=ELEVENLABS_API_KEY) -> Optional[bytes]:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voiceID}"
     headers = {
         "Accept": "audio/mpeg",
@@ -198,7 +199,7 @@ async def synthesize_text_elevenlabs_async_http(text, voiceID, modelID, apiKey=E
         # }
     }
     
-    audio_bytes = b''  # Initialize an empty bytes object
+    audio_bytes:bytes = b''  # Initialize an empty bytes object
 
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=data, headers=headers) as response:
@@ -235,22 +236,30 @@ async def synthesize_text_elevenlabs_async_http(text, voiceID, modelID, apiKey=E
 
     return audio_bytes
 
-def synthesize_text_azure(text, duration, voiceName, languageCode):
+def synthesize_text_azure(text:str, duration, voiceName, languageCode, style) -> speechsdk.AudioDataStream:
 
     # Create tag for desired duration of clip
     durationTag = f'<mstts:audioduration value="{str(duration)}ms"/>'
 
     # Create string for sentence pauses, if not default
-    if not config['azure_sentence_pause'] == 'default':
-        sentencePauseTag = f'<mstts:silence type="Sentenceboundary-exact" value="{str(config["azure_sentence_pause"])}ms"/>'
+    if not config.azure_sentence_pause == 'default':
+        sentencePauseTag = f'<mstts:silence type="Sentenceboundary-exact" value="{str(config.azure_sentence_pause)}ms"/>'
     else:
         sentencePauseTag = ''
 
     # Create string for comma pauses, if not default
-    if not config['azure_comma_pause'] == 'default':
-        commaPauseTag = f'<mstts:silence type="Comma-exact" value="{str(config["azure_comma_pause"])}ms"/>'
+    if not config.azure_comma_pause == 'default':
+        commaPauseTag = f'<mstts:silence type="Comma-exact" value="{str(config.azure_comma_pause)}ms"/>'
     else:
         commaPauseTag = ''
+        
+    # Create string for style, if not default
+    if not style == 'default':
+        styleTagStart = f'<mstts:express-as style="{style}">'
+        styleTagEnd = f'</mstts:express-as>'
+    else:
+        styleTagStart = ''
+        styleTagEnd = ''
 
     # Set string for tag to set leading and trailing silence times to zero
     leadSilenceTag = '<mstts:silence  type="Leading-exact" value="0ms"/>'
@@ -262,8 +271,8 @@ def synthesize_text_azure(text, duration, voiceName, languageCode):
     # Create SSML syntax for Azure TTS
     ssml = f"<speak version='1.0' xml:lang='{languageCode}' xmlns='http://www.w3.org/2001/10/synthesis' " \
         "xmlns:mstts='http://www.w3.org/2001/mstts'>" \
-        f"<voice name='{voiceName}'>{sentencePauseTag}{commaPauseTag}{durationTag}{leadSilenceTag}{tailSilenceTag}" \
-        f"{text}</voice></speak>"
+        f"<voice name='{voiceName}'>{sentencePauseTag}{commaPauseTag}{durationTag}{leadSilenceTag}{tailSilenceTag}{styleTagStart}" \
+        f"{text}{styleTagEnd}</voice></speak>"
 
     speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
     # For Azure voices, see: https://learn.microsoft.com/en-us/azure/cognitive-services/speech-service/language-support?tabs=stt-tts
@@ -278,7 +287,7 @@ def synthesize_text_azure(text, duration, voiceName, languageCode):
     stream = speechsdk.AudioDataStream(result)
     return stream
 
-def format_percentage_change(speedFactor):
+def format_percentage_change(speedFactor) -> str:
     # Determine speedFactor value for Azure TTS. It should be either 'default' or a relative change.
     if speedFactor == 1.0:
         rate = 'default'
@@ -292,34 +301,43 @@ def format_percentage_change(speedFactor):
         rate = percentSign + str(round((speedFactor - 1.0) * 100, 5)) + '%'
     return rate
 
-def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, secondPass=False):
+def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, secondPass=False) -> dict:
 
     def create_request_payload(remainingEntriesDict):
         # Create SSML for all subtitles
-        ssmlJson = []
-        payloadSizeInBytes = 0
+        ssmlJson:list = []
+        payloadSizeInBytes:int = 0
         tempDict = dict(remainingEntriesDict) # Need to do this to avoid changing the original dict which would mess with the loop
 
         for key, value in tempDict.items():
-            text = tempDict[key]['translated_text']
-            duration = tempDict[key]['duration_ms_buffered']
-            language = langDict['languageCode']
-            voice = langDict['voiceName']
+            text = tempDict[key][SubsDictKeys.translated_text]
+            duration = tempDict[key][SubsDictKeys.duration_ms_buffered]
+            language = langDict[LangDictKeys.languageCode]
+            voice = langDict[LangDictKeys.voiceName]
+            style = langDict[LangDictKeys.voiceStyle]
 
             # Create tag for desired duration of clip
             durationTag = f'<mstts:audioduration value="{str(duration)}ms"/>'
 
             # Create string for sentence pauses, if not default
-            if not config['azure_sentence_pause'] == 'default':
-                sentencePauseTag = f'<mstts:silence type="Sentenceboundary-exact" value="{str(config["azure_sentence_pause"])}ms"/>'
+            if not config.azure_sentence_pause == 'default':
+                sentencePauseTag = f'<mstts:silence type="Sentenceboundary-exact" value="{str(config.azure_sentence_pause)}ms"/>'
             else:
                 sentencePauseTag = ''
 
             # Create string for comma pauses, if not default
-            if not config['azure_comma_pause'] == 'default':
-                commaPauseTag = f'<mstts:silence type="Comma-exact" value="{str(config["azure_comma_pause"])}ms"/>'
+            if not config.azure_comma_pause == 'default':
+                commaPauseTag = f'<mstts:silence type="Comma-exact" value="{str(config.azure_comma_pause)}ms"/>'
             else:
                 commaPauseTag = ''
+                
+                # Create string for style, if not default
+            if not style == 'default':
+                styleTagStart = f'<mstts:express-as style="{style}">'
+                styleTagEnd = f'</mstts:express-as>'
+            else:
+                styleTagStart = ''
+                styleTagEnd = ''
 
             # Set string for tag to set leading and trailing silence times to zero
             leadSilenceTag = '<mstts:silence  type="Leading-exact" value="0ms"/>'
@@ -331,17 +349,17 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
             # Create the SSML for each subtitle
             ssml = f"<speak version='1.0' xml:lang='{language}' xmlns='http://www.w3.org/2001/10/synthesis' " \
             "xmlns:mstts='http://www.w3.org/2001/mstts'>" \
-            f"<voice name='{voice}'>{sentencePauseTag}{commaPauseTag}{durationTag}{leadSilenceTag}{tailSilenceTag}" \
-            f"{text}</voice></speak>"
-            ssmlJson.append({"text": ssml})
+            f"<voice name='{voice}'>{sentencePauseTag}{commaPauseTag}{durationTag}{leadSilenceTag}{tailSilenceTag}{styleTagStart}" \
+            f"{text}{styleTagEnd}</voice></speak>"
+            ssmlJson.append({"content": ssml})
 
             # Construct request payload with SSML
             # Reconstruct payload with every loop with new SSML so that the payload size is accurate
             now = datetime.datetime.now()
-            pendingPayload = {
-                'displayName': langDict['languageCode'] + '-' + now.strftime("%Y-%m-%d %H:%M:%S"),
-                'description': 'Batch synthesis of ' + langDict['languageCode'] + ' subtitles',
-                "textType": "SSML",
+            pendingPayload:dict = {
+                'displayName': langDict[LangDictKeys.languageCode] + '-' + now.strftime("%Y-%m-%d %H:%M:%S"),
+                'description': 'Batch synthesis of ' + langDict[LangDictKeys.languageCode] + ' subtitles',
+                "inputKind": "SSML",
                 # To use custom voice, see original example code script linked from azure_batch.py
                 "inputs": ssmlJson,
                 "properties": {
@@ -354,7 +372,7 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
             }
             # Azure TTS Batch requests require payload must be under 500 kilobytes, so check payload is under 500,000 bytes. Not sure if they actually mean kibibytes, assume worst case.
             # Payload will be formatted as json so must account for that too by doing json.dumps(), otherwise calculated size will be inaccurate
-            payloadSizeInBytes = len(str(json.dumps(pendingPayload)).encode('utf-8')) 
+            payloadSizeInBytes:int = len(str(json.dumps(pendingPayload)).encode('utf-8')) 
 
             if payloadSizeInBytes > 495000 or len(ssmlJson) > 995: # Leave some room for anything unexpected. Also number of inputs must be below 1000
                 # If payload would be too large, ignore the last entry and break out of loop
@@ -386,7 +404,7 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
 
     # Clear out workingFolder
     for filename in os.listdir('workingFolder'):
-        if not config['debug_mode']:
+        if not config.debug_mode:
             os.remove(os.path.join('workingFolder', filename))
 
     # Loop through payloads and submit to Azure
@@ -405,12 +423,19 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
             while True: # Must use break to exit loop
                 # Get status
                 response = azure_batch.get_synthesis(job_id)
-                status = response.json()['status']
-                if status == 'Succeeded':
+                if response:
+                    status = response.json()['status']
+                else:
+                    if utils.choice("Failed to get status of Azure batch synthesis job. Would you like to retry?") == True:
+                        continue
+                    else:
+                        break
+                    
+                if status and status == 'Succeeded':
                     print('Batch synthesis job succeeded')
-                    resultDownloadLink = azure_batch.get_synthesis(job_id).json()['outputs']['result']
+                    resultDownloadLink = response.json()['outputs']['result']
                     break
-                elif status == 'Failed':
+                elif status and status == 'Failed':
                     errorCode = response.json()['properties']['error']['code']
                     errorMessage = response.json()['properties']['error']['message']
                     print('ERROR: Batch synthesis job failed!')
@@ -421,7 +446,7 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
                     break
                 else:
                     print(f'Waiting for Azure batch synthesis job to finish. Status: [{status}]')
-                    time.sleep(5)
+                    time.sleep(5) # 5 Seconds
             
             # Download resultig zip file
             if resultDownloadLink is not None:
@@ -430,7 +455,7 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
                 urlResponse = urlopen(resultDownloadLink)
 
                 # If debug mode, save zip file to disk
-                if config['debug_mode']:
+                if config.debug_mode:
                     if secondPass == False:
                         zipName = 'azureBatch.zip'
                     else:
@@ -461,7 +486,7 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
                         #file.filename = file.filename.lstrip('0')
 
                         # Add file path to subsDict then remove from remainingDownloadedEntriesList
-                        subsDict[currentFileNum]['TTS_FilePath'] = os.path.join('workingFolder', str(currentFileNum)) + '.mp3'
+                        subsDict[currentFileNum][SubsDictKeys.TTS_FilePath] = os.path.join('workingFolder', str(currentFileNum)) + '.mp3'
                         # Extract file
                         zipdata.extract(file, 'workingFolder')
                         # Remove entry from remainingDownloadedEntriesList
@@ -469,9 +494,9 @@ def synthesize_text_azure_batch(subsDict, langDict, skipSynthesize=False, second
     return subsDict
 
 
-def synthesize_dictionary_batch(subsDict, langDict, skipSynthesize=False, secondPass=False):
+def synthesize_dictionary_batch(subsDict, langDict, skipSynthesize=False, secondPass=False) -> dict:
     if not skipSynthesize:
-        if cloudConfig['tts_service'] == 'azure':
+        if cloudConfig.tts_service == TTSService.AZURE:
             subsDict = synthesize_text_azure_batch(subsDict, langDict, skipSynthesize, secondPass)
         else:
             print('ERROR: Batch TTS only supports azure at this time')
@@ -479,7 +504,7 @@ def synthesize_dictionary_batch(subsDict, langDict, skipSynthesize=False, second
             exit()
     return subsDict
 
-async def synthesize_dictionary_async(subsDict, langDict, skipSynthesize=False, max_concurrent_jobs=2, secondPass=False):
+async def synthesize_dictionary_async(subsDict, langDict, skipSynthesize=False, max_concurrent_jobs=2, secondPass=False) -> dict:
     semaphore = asyncio.Semaphore(max_concurrent_jobs)
     lock = asyncio.Lock()
     progress = 0
@@ -494,20 +519,20 @@ async def synthesize_dictionary_async(subsDict, langDict, skipSynthesize=False, 
         # Use this to set max concurrent jobs
         async with semaphore:
             audio = await synthesize_text_elevenlabs_async_http(
-                value['translated_text'], 
-                langDict['voiceName'], 
-                langDict['voiceModel']
+                value[SubsDictKeys.translated_text], 
+                langDict[LangDictKeys.voiceName], 
+                langDict[LangDictKeys.voiceModel]
             )
 
             if audio:
                 filePath = os.path.join('workingFolder', f'{str(key)}.mp3')
                 with open(filePath, "wb") as out:
                     out.write(audio)
-                subsDict[key]['TTS_FilePath'] = filePath
+                subsDict[key][SubsDictKeys.TTS_FilePath] = filePath
             else:
                 nonlocal errorsOccured
                 errorsOccured = True
-                subsDict[key]['TTS_FilePath'] = "Failed"
+                subsDict[key][SubsDictKeys.TTS_FilePath] = "Failed"
 
         # Update and display progress after task completion
         async with lock:
@@ -517,7 +542,7 @@ async def synthesize_dictionary_async(subsDict, langDict, skipSynthesize=False, 
     tasks = []
 
     for key, value in subsDict.items():
-        if not skipSynthesize and cloudConfig['tts_service'] == "elevenlabs":
+        if not skipSynthesize and cloudConfig.tts_service == "elevenlabs":
             task = asyncio.create_task(synthesize_and_save(key, value))
             tasks.append(task)
 
@@ -534,18 +559,18 @@ async def synthesize_dictionary_async(subsDict, langDict, skipSynthesize=False, 
     return subsDict
 
 
-def synthesize_dictionary(subsDict, langDict, skipSynthesize=False, secondPass=False):
+def synthesize_dictionary(subsDict, langDict, skipSynthesize=False, secondPass=False) -> dict:
     for key, value in subsDict.items():
         # TTS each subtitle text, write to file, write filename into dictionary
         filePath = os.path.join('workingFolder', f'{str(key)}.mp3')
         filePathStem = os.path.join('workingFolder', f'{str(key)}')
         if not skipSynthesize:
 
-            duration = value['duration_ms_buffered']
+            duration = value[SubsDictKeys.duration_ms_buffered]
 
             if secondPass:
                 # Get speed factor from subsDict
-                speedFactor = subsDict[key]['speed_factor']
+                speedFactor = subsDict[key][SubsDictKeys.speed_factor]
             else:
                 speedFactor = float(1.0)
 
@@ -557,33 +582,33 @@ def synthesize_dictionary(subsDict, langDict, skipSynthesize=False, secondPass=F
                     print("Error creating directory")
 
             # If Google TTS, use Google API
-            if cloudConfig['tts_service'] == "google":
-                audio = synthesize_text_google(value['translated_text'], speedFactor, langDict['voiceName'], langDict['voiceGender'], langDict['languageCode'])
+            if cloudConfig.tts_service == TTSService.GOOGLE:
+                audio = synthesize_text_google(value[SubsDictKeys.translated_text], speedFactor, langDict[LangDictKeys.voiceName], langDict[LangDictKeys.voiceGender], langDict[LangDictKeys.languageCode])
                 with open(filePath, "wb") as out:
                     out.write(audio)
                 
-                # If debug mode, write to files after Google TTS
-                if config['debug_mode'] and secondPass == False:
-                    with open(filePathStem+"_p1.mp3", "wb") as out:
-                        out.write(audio)
-                elif config['debug_mode'] and secondPass == True:
-                    with open(filePathStem+"_p2.mp3", "wb") as out:
+                # If debug mode, write to files TTS - Doesn't write for 1st pass because it's already written as [number].mp3
+                # if config.debug_mode and secondPass == False:
+                #     with open(filePathStem+"_pass1.mp3", "wb") as out:
+                #         out.write(audio)
+                if config.debug_mode and secondPass == True:
+                    with open(filePathStem+"_pass2.mp3", "wb") as out:
                         out.write(audio)
 
             # If Azure TTS, use Azure API
-            elif cloudConfig['tts_service'] == "azure":
+            elif cloudConfig.tts_service == TTSService.AZURE:
                 # Audio variable is an AudioDataStream object
-                audio = synthesize_text_azure(value['translated_text'], duration, langDict['voiceName'], langDict['languageCode'])
+                audio = synthesize_text_azure(value[SubsDictKeys.translated_text], duration, langDict[LangDictKeys.voiceName], langDict[LangDictKeys.languageCode], langDict[LangDictKeys.voiceStyle])
                 # Save to file using save_to_wav_file method of audio object
                 audio.save_to_wav_file(filePath)
                 
-                # If debug mode, write to files after Google TTS
-                if config['debug_mode'] and secondPass == False:
-                    audio.save_to_wav_file(filePathStem+"_p1.mp3")
-                elif config['debug_mode'] and secondPass == True:
-                    audio.save_to_wav_file(filePathStem+"_p2.mp3")
-                    
-        subsDict[key]['TTS_FilePath'] = filePath
+                # If debug mode, write to files TTS - Doesn't write for 1st pass because it's already written as [number].mp3
+                # if config.debug_mode and secondPass == False:
+                #     audio.save_to_wav_file(filePathStem+"_pass1.mp3")
+                if config.debug_mode and secondPass == True:
+                    audio.save_to_wav_file(filePathStem+"_pass2.mp3")
+
+        subsDict[key][SubsDictKeys.TTS_FilePath] = filePath
 
         # Get key index
         keyIndex = list(subsDict.keys()).index(key)
